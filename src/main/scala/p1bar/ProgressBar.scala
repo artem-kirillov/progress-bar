@@ -29,30 +29,33 @@ object UnicodeBarFormat extends BarFormat {
   override def rightBoundary: String = "|"
 }
 
-object Scale extends ((Double, String, Double) => String) {
+trait Scaling {
+  def scale(num: Double): String
+}
+
+trait OrdersOfMagnitudeScaling extends Scaling {
   private val units = Seq("", "K", "M", "G", "T", "P", "E", "Z", "Y")
 
-  override def apply(num: Double, suffix: String = "", divisor: Double = 1000): String = {
+  protected val divisor: Double = 1000
+
+  override def scale(num: Double): String = {
     require(num >= 0 && divisor > 0)
     val (unit: String, value: Double) = units.zip(scale(num, divisor)).reverse.find(_._2 > 1d).getOrElse(("", num))
-    s"${formatValue(value)}$unit$suffix"
+    s"${formatValue(value)}$unit"
   }
 
   private def formatValue(value: Double): String =
-    if (value > 100) {
-      f"${value.toLong}%d"
-    } else if (value > 10) {
-      f"$value%.1f"
-    } else {
-      f"$value%.2f"
-    }
+    if (value > 10) f"$value%.1f" else f"$value%.2f"
 
   private def scale(num: Double, divisor: Double): Stream[Double] =
     cons(num, scale(num / divisor, divisor))
 }
 
-class BarFormatter(barFormat: BarFormat = AsciiBarFormat, unit: String = "it",
-                   unitScale: Boolean = false, unitDivisor: Int = 1000, ncols: Int = 10) {
+trait BinaryScaling extends OrdersOfMagnitudeScaling {
+  override protected val divisor = 1024
+}
+
+class BarFormatter(barFormat: BarFormat = AsciiBarFormat, unit: String = "it", ncols: Int = 10) extends Scaling {
   private val longFmt = DateTimeFormatter.ofPattern("HH:mm:ss")
   private val shortFmt = DateTimeFormatter.ofPattern("mm:ss")
 
@@ -97,8 +100,8 @@ class BarFormatter(barFormat: BarFormat = AsciiBarFormat, unit: String = "it",
     val rateFmt = formatRate(rate)
 
     val remainingFmt = formatInterval(FiniteDuration(((total - n) / rate).toLong, TimeUnit.SECONDS))
-    val nFmt = if (unitScale) Scale(n, divisor = unitDivisor) else n.toString
-    val totalFmt = if (unitScale) Scale(total, divisor = unitDivisor) else total.toString
+    val nFmt = scale(n)
+    val totalFmt = scale(total)
 
     s"$nFmt/$totalFmt [$elapsedFmt<$remainingFmt, $rateFmt]"
   }
@@ -108,19 +111,17 @@ class BarFormatter(barFormat: BarFormat = AsciiBarFormat, unit: String = "it",
 
     val rate = n.toDouble / elapsed.toSeconds
     val rateFmt = formatRate(rate)
-    val nFmt = if (unitScale) Scale(n, divisor = unitDivisor) else n.toString
+    val nFmt = scale(n)
 
     s"$nFmt [$elapsedFmt, $rateFmt]"
   }
 
   private def formatRate(rate: Double): String = {
-    val rateFmt = if (unitScale) {
-      Scale(rate, divisor = unitDivisor)
-    } else {
-      f"$rate%.2f"
-    }
+    val rateFmt = scale(rate)
     s"$rateFmt$unit/s"
   }
+
+  override def scale(num: Double): String = f"$num%.1f"
 }
 
 trait Updater {
@@ -192,7 +193,7 @@ object ProgressBar {
 object Main extends App {
   val its = 600000
 
-  val progress = ProgressBar(its, new BarFormatter(ncols = 60, barFormat = UnicodeBarFormat, unit = "bit", unitScale = true))
+  val progress = ProgressBar(its, new BarFormatter(ncols = 90, barFormat = UnicodeBarFormat, unit = "file") with OrdersOfMagnitudeScaling)
   progress meter { updater =>
     (1 to its).foreach { i =>
       Thread.sleep(1)
