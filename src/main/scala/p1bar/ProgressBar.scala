@@ -40,7 +40,7 @@ trait OrdersOfMagnitudeScaling extends Scaling {
 
   override def scale(num: Double): String = {
     require(num >= 0 && divisor > 0)
-    val (unit: String, value: Double) = units.zip(scale(num, divisor)).reverse.find(_._2 > 1d).getOrElse(("", num))
+    val (unit: String, value: Double) = units.toStream.zip(scale(num, divisor)).takeWhile(_._2 > 1d).lastOption.getOrElse(("", num))
     s"${formatValue(value)}$unit"
   }
 
@@ -61,7 +61,7 @@ class BarFormatter(unit: String = "it", ncols: Int = 10) extends Scaling with As
 
   def format(n: Int, total: Int, elapsed: Duration): String = {
     require(n <= total && total > 0, s"Current n is $n, total is $total")
-    require(n >= 0)
+    require(n >= 0, "n should be greater or equal to 0")
 
     val leftBarStr = leftBar(n, total)
     val rightBarStr = rightBar(n, total, elapsed)
@@ -80,7 +80,7 @@ class BarFormatter(unit: String = "it", ncols: Int = 10) extends Scaling with As
   }
 
   private def leftBar(n: Int, total: Int): String = {
-    val v: Double = 100d * n / total
+    val v = 100d * n / total
     f"$v%.1f%%"
   }
 
@@ -94,34 +94,20 @@ class BarFormatter(unit: String = "it", ncols: Int = 10) extends Scaling with As
   }
 
   private def rightBar(n: Int, total: Int, elapsed: Duration): String = {
-    val elapsedFmt = formatInterval(elapsed)
-
     val rate = n.toDouble / elapsed.toSeconds
-    val rateFmt = formatRate(rate)
-
+    val elapsedFmt = formatInterval(elapsed)
     val remainingFmt = formatInterval(FiniteDuration(((total - n) / rate).toLong, TimeUnit.SECONDS))
-    val nFmt = scale(n)
-    val totalFmt = scale(total)
 
-    s"$nFmt/$totalFmt [$elapsedFmt<$remainingFmt, $rateFmt]"
+    s"${scale(n)}/${scale(total)} [$elapsedFmt<$remainingFmt, ${formatRate(rate)}]"
   }
 
   private def rightBar(n: Int, elapsed: Duration): String = {
-    val elapsedFmt = formatInterval(elapsed)
-
     val rate = n.toDouble / elapsed.toSeconds
-    val rateFmt = formatRate(rate)
-    val nFmt = scale(n)
-
-    s"$nFmt [$elapsedFmt, $rateFmt]"
-  }
-
-  private def formatRate(rate: Double): String = {
-    val rateFmt = scale(rate)
-    s"$rateFmt$unit/s"
+    s"${scale(n)} [${formatInterval(elapsed)}, ${formatRate(rate)}]"
   }
 
   override def scale(num: Double): String = f"$num%.1f"
+  private def formatRate(rate: Double): String = s"${scale(rate)}$unit/s"
 }
 
 trait Updater {
