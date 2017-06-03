@@ -15,14 +15,14 @@ trait BarFormat {
   def rightBoundary: String
 }
 
-object AsciiBarFormat extends BarFormat {
+trait AsciiBarFormat extends BarFormat {
   override def leftBoundary: String = "|"
   override def bar: String = "#"
   override def empty: String = "-"
   override def rightBoundary: String = "|"
 }
 
-object UnicodeBarFormat extends BarFormat {
+trait UnicodeBarFormat extends BarFormat {
   override def leftBoundary: String = "|"
   override def bar: String = "\u2588"
   override def empty: String = " "
@@ -55,7 +55,7 @@ trait BinaryScaling extends OrdersOfMagnitudeScaling {
   override protected val divisor = 1024
 }
 
-class BarFormatter(barFormat: BarFormat = AsciiBarFormat, unit: String = "it", ncols: Int = 10) extends Scaling {
+class BarFormatter(unit: String = "it", ncols: Int = 10) extends Scaling with AsciiBarFormat {
   private val longFmt = DateTimeFormatter.ofPattern("HH:mm:ss")
   private val shortFmt = DateTimeFormatter.ofPattern("mm:ss")
 
@@ -85,12 +85,12 @@ class BarFormatter(barFormat: BarFormat = AsciiBarFormat, unit: String = "it", n
   }
 
   private def progressBar(n: Int, total: Int, nBars: Int): String = {
-    val bodyLength = nBars - barFormat.leftBoundary.length - barFormat.rightBoundary.length
+    val bodyLength = nBars - leftBoundary.length - rightBoundary.length
     val frac = n.toDouble / total
     val done = (frac * bodyLength).toInt
     val remaining = bodyLength - done
 
-    s"${barFormat.leftBoundary}${barFormat.bar * done}${barFormat.empty * remaining}${barFormat.rightBoundary}"
+    s"$leftBoundary${bar * done}${empty * remaining}$rightBoundary"
   }
 
   private def rightBar(n: Int, total: Int, elapsed: Duration): String = {
@@ -193,7 +193,7 @@ object ProgressBar {
 object Main extends App {
   val its = 600000
 
-  val progress = ProgressBar(its, new BarFormatter(ncols = 90, barFormat = UnicodeBarFormat, unit = "file") with OrdersOfMagnitudeScaling)
+  val progress = ProgressBar(its, new BarFormatter(ncols = 90, unit = "file") with OrdersOfMagnitudeScaling with UnicodeBarFormat)
   progress meter { updater =>
     (1 to its).foreach { i =>
       Thread.sleep(1)
