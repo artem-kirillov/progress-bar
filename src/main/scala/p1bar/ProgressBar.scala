@@ -24,7 +24,7 @@ object AsciiBarFormat extends BarFormat {
 object UnicodeBarFormat extends BarFormat {
   override def leftBoundary: String = "|"
   override def bar: String = "\u2588"
-  override def empty: String = "\u2591"
+  override def empty: String = " "
   override def rightBoundary: String = "|"
 }
 
@@ -92,12 +92,7 @@ trait Updater {
   def update(incr: Int): Unit
 }
 
-class ProgressBar(total: Int, barFormatter: BarFormatter) {
-  def this(barFormatter: BarFormatter) = this(ProgressBar.UnknownTotal, barFormatter)
-  def this() = this(ProgressBar.UnknownTotal, new BarFormatter())
-
-  def this(total: Int) = this(total, new BarFormatter())
-
+class ProgressBar private(total: Int, barFormatter: BarFormatter) {
   private lazy val console = new PrintStream(System.err, true, "UTF-8")
   private val renderInterval: Long = TimeUnit.MILLISECONDS.toNanos(100)
 
@@ -151,13 +146,18 @@ class ProgressBar(total: Int, barFormatter: BarFormatter) {
 }
 
 object ProgressBar {
-  val UnknownTotal: Int = -1
+  private val UnknownTotal: Int = -1
+
+  def apply(total: Int, barFormatter: BarFormatter): ProgressBar = new ProgressBar(total, barFormatter)
+  def apply(total: Int): ProgressBar = new ProgressBar(total, new BarFormatter())
+  def apply(barFormatter: BarFormatter): ProgressBar = new ProgressBar(UnknownTotal, barFormatter)
+  def apply(): ProgressBar = new ProgressBar(UnknownTotal, new BarFormatter())
 }
 
 object Main extends App {
   val its = 6000
 
-  val progress = new ProgressBar(new BarFormatter(ncols = 5))
+  val progress = ProgressBar(its, new BarFormatter(ncols = 60, barFormat = UnicodeBarFormat))
   progress meter { updater =>
     (1 to its).foreach { i =>
       Thread.sleep(1)
