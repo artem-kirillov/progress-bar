@@ -1,10 +1,11 @@
 package p1bar
 
 import java.io.PrintStream
-import java.time.{Instant, ZoneId}
 import java.time.format.DateTimeFormatter
+import java.time.{Instant, ZoneId}
 import java.util.concurrent.TimeUnit
 
+import scala.collection.immutable.Stream.cons
 import scala.concurrent.duration.{Duration, FiniteDuration}
 
 trait BarFormat {
@@ -28,13 +29,35 @@ object UnicodeBarFormat extends BarFormat {
   override def rightBoundary: String = "|"
 }
 
-class BarFormatter(barFormat: BarFormat = AsciiBarFormat, unit: String = "it", unitScale: Boolean = false,
-                   ncols: Int = 10) {
+object Scale extends ((Double, String, Double) => String) {
+  private val units = Seq("", "K", "M", "G", "T", "P", "E", "Z", "Y")
+
+  override def apply(num: Double, suffix: String = "", divisor: Double = 1000): String = {
+    require(num >= 0 && divisor > 0)
+    val (unit: String, value: Double) = units.zip(scale(num, divisor)).reverse.find(_._2 > 1d).getOrElse(("", num))
+    s"${formatValue(value)}$unit$suffix"
+  }
+
+  private def formatValue(value: Double): String =
+    if (value > 100) {
+      f"${value.toLong}%d"
+    } else if (value > 10) {
+      f"$value%.1f"
+    } else {
+      f"$value%.2f"
+    }
+
+  private def scale(num: Double, divisor: Double): Stream[Double] =
+    cons(num, scale(num / divisor, divisor))
+}
+
+class BarFormatter(barFormat: BarFormat = AsciiBarFormat, unit: String = "it",
+                   unitScale: Boolean = false, unitDivisor: Int = 1000, ncols: Int = 10) {
   private val longFmt = DateTimeFormatter.ofPattern("HH:mm:ss")
   private val shortFmt = DateTimeFormatter.ofPattern("mm:ss")
 
   def format(n: Int, total: Int, elapsed: Duration): String = {
-    require(n <= total && total > 0)
+    require(n <= total && total > 0, s"Current n is $n, total is $total")
     require(n >= 0)
 
     val leftBarStr = leftBar(n, total)
@@ -71,20 +94,32 @@ class BarFormatter(barFormat: BarFormat = AsciiBarFormat, unit: String = "it", u
     val elapsedFmt = formatInterval(elapsed)
 
     val rate = n.toDouble / elapsed.toSeconds
-    val rateFmt = f"$rate%5.2f$unit%s/s"
+    val rateFmt = formatRate(rate)
 
     val remainingFmt = formatInterval(FiniteDuration(((total - n) / rate).toLong, TimeUnit.SECONDS))
+    val nFmt = if (unitScale) Scale(n, divisor = unitDivisor) else n.toString
+    val totalFmt = if (unitScale) Scale(total, divisor = unitDivisor) else total.toString
 
-    s"$n/$total [$elapsedFmt<$remainingFmt, $rateFmt]"
+    s"$nFmt/$totalFmt [$elapsedFmt<$remainingFmt, $rateFmt]"
   }
 
   private def rightBar(n: Int, elapsed: Duration): String = {
     val elapsedFmt = formatInterval(elapsed)
 
     val rate = n.toDouble / elapsed.toSeconds
-    val rateFmt = f"$rate%5.2f$unit%s/s"
+    val rateFmt = formatRate(rate)
+    val nFmt = if (unitScale) Scale(n, divisor = unitDivisor) else n.toString
 
-    s"$n [$elapsedFmt, $rateFmt]"
+    s"$nFmt [$elapsedFmt, $rateFmt]"
+  }
+
+  private def formatRate(rate: Double): String = {
+    val rateFmt = if (unitScale) {
+      Scale(rate, divisor = unitDivisor)
+    } else {
+      f"$rate%.2f"
+    }
+    s"$rateFmt$unit/s"
   }
 }
 
@@ -155,13 +190,13 @@ object ProgressBar {
 }
 
 object Main extends App {
-  val its = 6000
+  val its = 600000
 
-  val progress = ProgressBar(its, new BarFormatter(ncols = 60, barFormat = UnicodeBarFormat))
+  val progress = ProgressBar(its, new BarFormatter(ncols = 60, barFormat = UnicodeBarFormat, unit = "bit", unitScale = true))
   progress meter { updater =>
     (1 to its).foreach { i =>
       Thread.sleep(1)
-      updater.update(1)
+      updater.update(100)
     }
   }
 }
