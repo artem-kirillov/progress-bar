@@ -6,7 +6,6 @@ import java.time.{Instant, ZoneId}
 import java.util.concurrent.TimeUnit
 
 import scala.collection.immutable.Stream.cons
-import scala.concurrent.duration.{Duration, FiniteDuration}
 
 trait BarFormat {
   def leftBoundary: String
@@ -59,7 +58,7 @@ class BarFormatter(unit: String = "it", ncols: Int = 10) extends Scaling with As
   private val longFmt = DateTimeFormatter.ofPattern("HH:mm:ss")
   private val shortFmt = DateTimeFormatter.ofPattern("mm:ss")
 
-  def format(n: Int, total: Int, elapsed: Duration): String = {
+  def format(n: Int, total: Int, elapsed: Long): String = {
     require(n <= total && total > 0, s"Current n is $n, total is $total")
     require(n >= 0, "n should be greater or equal to 0")
 
@@ -72,16 +71,16 @@ class BarFormatter(unit: String = "it", ncols: Int = 10) extends Scaling with As
     s"$leftBarStr$bar$rightBarStr"
   }
 
-  def format(n: Int, elapsed: Duration): String = rightBar(n, elapsed)
+  def format(n: Int, elapsed: Long): String = rightBar(n, elapsed)
 
-  private def formatInterval(int: Duration): String = {
-    val inst = Instant.ofEpochMilli(int.toMillis).atZone(ZoneId.systemDefault()).toLocalDateTime
-    if (int.toHours >= 1) longFmt.format(inst) else shortFmt.format(inst)
+  private def formatInterval(int: Long): String = {
+    val inst = Instant.ofEpochMilli(int).atZone(ZoneId.systemDefault()).toLocalDateTime
+    if (TimeUnit.MILLISECONDS.toHours(int) >= 1) longFmt.format(inst) else shortFmt.format(inst)
   }
 
   private def leftBar(n: Int, total: Int): String = {
     val v = 100d * n / total
-    f"$v%.1f%%"
+    f"$v%5.1f%%"
   }
 
   private def progressBar(n: Int, total: Int, nBars: Int): String = {
@@ -93,16 +92,18 @@ class BarFormatter(unit: String = "it", ncols: Int = 10) extends Scaling with As
     s"$leftBoundary${bar * done}${empty * remaining}$rightBoundary"
   }
 
-  private def rightBar(n: Int, total: Int, elapsed: Duration): String = {
-    val rate = n.toDouble / elapsed.toSeconds
+  private def rightBar(n: Int, total: Int, elapsed: Long): String = {
+    val elapsedSecs: Double = 1d * elapsed / 1000
+    val rate: Double = n.toDouble / elapsedSecs
     val elapsedFmt = formatInterval(elapsed)
-    val remainingFmt = formatInterval(FiniteDuration(((total - n) / rate).toLong, TimeUnit.SECONDS))
+    val remainingFmt = formatInterval((1000 * (total - n) / rate).toLong)
 
     s"${scale(n)}/${scale(total)} [$elapsedFmt<$remainingFmt, ${formatRate(rate)}]"
   }
 
-  private def rightBar(n: Int, elapsed: Duration): String = {
-    val rate = n.toDouble / elapsed.toSeconds
+  private def rightBar(n: Int, elapsed: Long): String = {
+    val elapsedSecs = 1d * elapsed / 1000
+    val rate = n.toDouble / elapsedSecs
     s"${scale(n)} [${formatInterval(elapsed)}, ${formatRate(rate)}]"
   }
 
@@ -116,28 +117,27 @@ trait Updater {
 
 class ProgressBar private(total: Int, barFormatter: BarFormatter) {
   private lazy val console = new PrintStream(System.err, true, "UTF-8")
-  private val renderInterval: Long = TimeUnit.MILLISECONDS.toNanos(100)
+  private val renderInterval: Long = 100
 
   private var startTime: Long = _
   private var n = 0
   private var lastLen = 0
   private var lastRenderTime: Long = 0
 
-  private def now(): Long = System.nanoTime
+  private def now(): Long = TimeUnit.NANOSECONDS.toMillis(System.nanoTime)
 
   private def update(incr: Int): Unit = {
     require(incr >= 0)
     n += incr
-
-    if (now() - lastRenderTime > renderInterval || n == total) {
-      render()
-      lastRenderTime = now()
+    val curTime = now()
+    if (curTime - lastRenderTime > renderInterval || n == total) {
+      val elapsed: Long = curTime - startTime
+      render(elapsed)
+      lastRenderTime = curTime
     }
   }
 
-  private def render(): Unit = {
-    val elapsed = FiniteDuration(now() - startTime, TimeUnit.NANOSECONDS)
-
+  private def render(elapsed: Long): Unit = {
     val barLine: String = if (total == ProgressBar.UnknownTotal) {
       barFormatter.format(n, elapsed)
     } else {
