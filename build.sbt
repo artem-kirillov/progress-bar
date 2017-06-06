@@ -11,6 +11,7 @@ lazy val progressBar = (project in file(".")).
     )),
     name := "progress-bar",
     libraryDependencies ++= Seq(
+      jna % Compile,
       scalaTest % Test
     ),
     compileScalastyle := org.scalastyle.sbt.ScalastylePlugin.scalastyle.in(Compile).toTask("").value,
